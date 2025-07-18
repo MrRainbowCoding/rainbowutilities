@@ -1,0 +1,20 @@
+{
+    "guilds": {},
+    "defaultSettings": {
+        "moderatorRoles": [],
+        "logChannel": null,
+        "muteRole": null,
+        "autoMod": {
+            "enabled": true,
+            "spamThreshold": 5,
+            "timeWindow": 10000,
+            "capsThreshold": 0.8,
+            "maxMentions": 3
+        },
+        "warningActions": {
+            "3": "timeout_1h",
+            "5": "timeout_24h",
+            "7": "ban"
+        }
+    }
+}

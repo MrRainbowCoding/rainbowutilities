@@ -1,0 +1,14 @@
+{
+    "moderatorRoles": [
+        "Moderator",
+        "Admin",
+        "Staff"
+    ],
+    "logChannel": "mod-logs",
+    "muteRole": "Muted",
+    "autoMod": {
+        "enabled": true,
+        "spamThreshold": 5,
+        "timeWindow": 10000
+    }
+}
