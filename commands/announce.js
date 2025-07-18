@@ -20,7 +20,7 @@ module.exports = {
             return interaction.reply({ content: 'Please select a text channel.', ephemeral: true });
         }
 
-        await channel.send(message);
+        await channel.send(`! ADMIN ANNOUNCEMENT !\n${message}\n@everyone`);
         await interaction.reply({ content: `Announcement sent to ${channel}.`, ephemeral: true });
     },
 };

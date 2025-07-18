@@ -4,6 +4,10 @@ const path = require('path');
 const { checkPermissions } = require('./utils/permissions');
 const { logAction } = require('./utils/logger');
 const { checkSpam, addMessage } = require('./utils/automod');
+const env = require('dotenv');
+
+// Load environment variables
+env.config();
 
 // Create Discord client with necessary intents
 const client = new Client({
@@ -34,13 +38,36 @@ for (const file of commandFiles) {
     }
 }
 
-// Bot ready event
-client.once(Events.ClientReady, () => {
+// Register slash commands automatically on startup
+const { REST } = require('@discordjs/rest');
+const { Routes } = require('discord.js');
+
+client.once(Events.ClientReady, async () => {
     console.log(`✅ Bot is ready! Logged in as ${client.user.tag}`);
     console.log(`📊 Serving ${client.guilds.cache.size} guilds`);
-    
+
     // Set bot status
     client.user.setActivity('for rule violations', { type: 'WATCHING' });
+
+    // Prepare commands for registration
+    const commandsData = [];
+    for (const command of client.commands.values()) {
+        if (command.data) {
+            commandsData.push(command.data.toJSON ? command.data.toJSON() : command.data);
+        }
+    }
+
+    // Register commands globally
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+    try {
+        await rest.put(
+            Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
+            { body: commandsData }
+        );
+        console.log('✅ Slash commands registered globally.');
+    } catch (error) {
+        console.error('❌ Error registering slash commands:', error);
+    }
 });
 
 // Handle slash command interactions
