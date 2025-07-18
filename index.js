@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Collection, Events, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Events, EmbedBuilder, ActivityType } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const { checkPermissions } = require('./utils/permissions');
@@ -46,8 +46,17 @@ client.once(Events.ClientReady, async () => {
     console.log(`✅ Bot is ready! Logged in as ${client.user.tag}`);
     console.log(`📊 Serving ${client.guilds.cache.size} guilds`);
 
-    // Set bot status
-    client.user.setActivity('for rule violations', { type: 'WATCHING' });
+    // Set bot presence status from config
+    const statusConfig = require('./config/status');
+    client.user.setPresence({
+        status: statusConfig.status.presence,
+        activities: [
+            {
+                name: statusConfig.status.text,
+                type: statusConfig.status.type
+            }
+        ]
+    });
 
     // Prepare commands for registration
     const commandsData = [];
@@ -164,6 +173,27 @@ client.on(Events.Warn, warning => {
     console.warn('Discord client warning:', warning);
 });
 
+
 // Login to Discord
 const token = process.env.DISCORD_TOKEN || 'your_discord_bot_token_here';
 client.login(token);
+
+// Gracefully log out the bot before process exits
+const gracefulShutdown = async () => {
+    if (client.user) {
+        console.log('Logging out bot before process exit...');
+        await client.destroy();
+    }
+};
+
+process.on('SIGINT', () => {
+    gracefulShutdown().then(() => process.exit(0));
+});
+
+process.on('SIGTERM', () => {
+    gracefulShutdown().then(() => process.exit(0));
+});
+
+process.on('beforeExit', () => {
+    gracefulShutdown();
+});
