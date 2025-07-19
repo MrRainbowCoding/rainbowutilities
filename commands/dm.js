@@ -20,7 +20,7 @@ module.exports = {
         const message = interaction.options.getString('message');
 
         try {
-            await targetUser.send(`📩 **Message from an admin:**\n${message}`);
+            await targetUser.send(`📩 **Message from an admin:**\n\n${message}`);
             await interaction.reply({ content: `✅ Message sent to ${targetUser.tag}.`, ephemeral: true });
         } catch (error) {
             await interaction.reply({ content: `❌ Could not send DM to ${targetUser.tag}. They may have DMs disabled.`, ephemeral: true });
