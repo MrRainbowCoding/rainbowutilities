@@ -53,6 +53,9 @@ To get your bot up and running, follow these steps:
 
    - `DISCORD_CLIENT_ID`: Your bot's client ID (application ID) from the Discord Developer Portal.
 
+   **Note**: All environment variables are required for the bot to function properly. Ensure you replace the placeholders with your actual values. Also, the `.env` file will not be committed to version control, so it remains private. This is important for security reasons and to prevent accidental exposure of sensitive information. This file is ignored within the `.gitignore` file, **DO NOT DELETE `.gitignore`**.
+
+   **NEVER DELETE THE `.gitignore` FILE, IT KEEPS YOUR CONFIGS AND ENVIRONMENT VARIABLES PRIVATE**
 4. Configuration Files:
 
    Ensure you have the following JSON configuration files in a data directory (create it if it doesn't exist):
