@@ -1,4 +1,5 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { getGuildConfig } = require('../configManager'); // Still need getGuildConfig
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -15,35 +16,69 @@ module.exports = {
                 .setRequired(true)
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    async execute(interaction) {
+
+    async execute(interaction, client, serverConfig, saveServerConfig) { // Added parameters
         const targetUser = interaction.options.getUser('user');
         const message = interaction.options.getString('message');
+        // Use getGuildConfig from configManager, which handles default settings
+        const config = getGuildConfig(interaction.guildId); 
 
-        // It's good practice to check if the target is a bot.
-        if (targetUser.bot) {
-            return interaction.reply({ content: "❌ You cannot DM a bot.", ephemeral: true });
+        // Validate log channel setup
+        if (!config.logChannel) {
+            return await interaction.reply({
+                content: '❌ This server has no DM log channel configured. Please use `/setup`.',
+                ephemeral: true
+            });
+        }
+
+        const logChannel = await interaction.guild.channels.fetch(config.logChannel).catch(() => null);
+        if (!logChannel || !logChannel.isTextBased()) {
+            return await interaction.reply({
+                content: '❌ Failed to fetch the DM log channel. Please check permissions.',
+                ephemeral: true
+            });
         }
 
         try {
-            // First, attempt to send the DM. Including the guild name is helpful context for the user.
-            await targetUser.send(`📩 **Message from an admin of ${interaction.guild.name}:**\n\n${message}`);
-        } catch (error) {
-            // If sending fails, reply with an error and stop the command.
-            console.error(`Could not send DM to ${targetUser.tag}.`, error);
-            return interaction.reply({ content: `❌ Could not send DM to ${targetUser.tag}. They may have DMs disabled or have blocked the bot.`, ephemeral: true });
-        }
+            // Send DM to the user
+            await targetUser.send(`📩 **Message from ${interaction.guild.name} admin:**\n\n${message}`);
 
-        // If the DM was sent successfully, proceed with other logic.
-        try {
-            // This assumes you have a custom DM tracking system.
-            // Ensure you have initialized `client.activeDMs` in your bot's main file.
-            interaction.client.activeDMs.set(targetUser.id, interaction.user.id);
-        } catch (e) {
-            // Log this error but don't stop the command, as the primary goal (sending the DM) was successful.
-            console.error("DM tracking setup failed. Is `client.activeDMs` initialized?", e);
+            // Log to server
+            const logEmbed = new EmbedBuilder()
+                .setTitle('📨 DM Sent')
+                .addFields(
+                    { name: 'To', value: `${targetUser.tag} (${targetUser.id})` },
+                    { name: 'From Admin', value: `${interaction.user.tag}` },
+                    { name: 'Message', value: message }
+                )
+                .setColor('Blue')
+                .setTimestamp();
+
+            const logMessage = await logChannel.send({ embeds: [logEmbed] });
+
+            // Save thread info for reply handling using the passed serverConfig
+            if (!serverConfig.guilds[interaction.guildId]) {
+                serverConfig.guilds[interaction.guildId] = {};
+            }
+            if (!serverConfig.guilds[interaction.guildId].dmThreads) {
+                serverConfig.guilds[interaction.guildId].dmThreads = {};
+            }
+            const dmThreads = serverConfig.guilds[interaction.guildId].dmThreads;
+            const threadId = logMessage.thread ? logMessage.thread.id : logMessage.channel.id;
+            dmThreads[targetUser.id] = threadId;
+            dmThreads[threadId] = targetUser.id;
+            saveServerConfig(); // Use the passed saveServerConfig function
+
+            await interaction.reply({
+                content: `✅ Message sent to ${targetUser.tag}.`,
+                ephemeral: true
+            });
+        } catch (err) {
+            console.error('DM Error:', err);
+            await interaction.reply({
+                content: `❌ Could not send DM to ${targetUser.tag}. They may have DMs disabled.`,
+                ephemeral: true
+            });
         }
-        
-        // Finally, confirm to the command user that the message was sent.
-        await interaction.reply({ content: `✅ Message sent to ${targetUser.tag}.`, ephemeral: true });
     },
 };

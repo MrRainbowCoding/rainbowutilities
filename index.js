@@ -1,11 +1,41 @@
-const { Client, GatewayIntentBits, Collection, Events, EmbedBuilder, Partials } = require('discord.js');
+const {
+    Client,
+    GatewayIntentBits,
+    Collection,
+    Events,
+    EmbedBuilder,
+    Partials
+} = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config();
+
+// Utils
 const { checkPermissions } = require('./utils/permissions');
 const { logAction } = require('./utils/logger');
 const { checkSpam, addMessage } = require('./utils/automod');
-require('dotenv').config();
 
+// Settings
+const config = require('./data/config.json');
+const serverConfigPath = './data/serverConfig.json';
+let serverConfig;
+
+// Check if serverConfig.json exists, if not, create it
+if (fs.existsSync(serverConfigPath)) {
+    serverConfig = require(serverConfigPath);
+} else {
+    serverConfig = {
+        guilds: {}
+    };
+    fs.writeFileSync(serverConfigPath, JSON.stringify(serverConfig, null, 4));
+    console.log('✅ Created serverConfig.json as it did not exist.');
+}
+
+function saveServerConfig() {
+    fs.writeFileSync(serverConfigPath, JSON.stringify(serverConfig, null, 4));
+}
+
+// Create client
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -15,14 +45,12 @@ const client = new Client({
         GatewayIntentBits.GuildModeration,
         GatewayIntentBits.DirectMessages
     ],
-    partials: [Partials.Channel] // Needed for DMs
+    partials: [Partials.Channel]
 });
 
-// Use these client properties as the single source of truth
-client.activeDMs = new Collection();
 client.commands = new Collection();
 
-// Load all command files
+// Load commands
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
@@ -35,117 +63,166 @@ for (const file of commandFiles) {
     }
 }
 
-// Register slash commands on ready
+// Register slash commands
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord.js');
 
 client.once(Events.ClientReady, async () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
 
-    // Set bot presence
+    // Set status
     const status = require('./config/status');
     client.user.setPresence({
         status: status.status.presence,
         activities: [{ name: status.status.text, type: status.status.type }]
     });
 
-    // Register commands globally
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    const body = [...client.commands.values()].map(cmd => cmd.data.toJSON());
     try {
-        await rest.put(Routes.applicationCommands(process.env.DISCORD_CLIENT_ID), { body });
+        await rest.put(
+            Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
+            { body: client.commands.map(c => c.data.toJSON()) }
+        );
         console.log('✅ Slash commands registered.');
     } catch (err) {
         console.error('❌ Failed to register commands:', err);
     }
 });
 
-// Slash command handler
+// Handle slash commands
 client.on(Events.InteractionCreate, async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     const command = client.commands.get(interaction.commandName);
-    if (!command) return console.error(`❌ Command "${interaction.commandName}" not found.`);
+    if (!command) return;
 
     try {
         if (!checkPermissions(interaction.member, command.data.name)) {
-            const embed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setTitle('❌ Permission Denied')
-                .setDescription('You are not allowed to use this command.')
-                .setTimestamp();
-            return await interaction.reply({ embeds: [embed], ephemeral: true });
+            return interaction.reply({
+                embeds: [
+                    new EmbedBuilder()
+                        .setColor(0xFF0000)
+                        .setTitle('❌ Permission Denied')
+                        .setDescription('You do not have permission to use this command.')
+                ],
+                ephemeral: true
+            });
         }
-        await command.execute(interaction);
-    } catch (err) {
-        console.error(`❌ Error running ${interaction.commandName}:`, err);
-        const errorEmbed = new EmbedBuilder()
+        // Pass client, serverConfig, and saveServerConfig to the command's execute method
+        await command.execute(interaction, client, serverConfig, saveServerConfig);
+    } catch (error) {
+        console.error(`❌ Error executing ${interaction.commandName}:`, error);
+        const embed = new EmbedBuilder()
             .setColor(0xFF0000)
-            .setTitle('⚠️ Command Failed')
-            .setDescription('An error occurred while executing the command.')
-            .setTimestamp();
+            .setTitle('⚠️ Error')
+            .setDescription('An error occurred while executing this command.');
+
         if (interaction.replied || interaction.deferred) {
-            await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
+            await interaction.followUp({ embeds: [embed], ephemeral: true });
         } else {
-            await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
 });
 
-// DM message handler
-client.on(Events.MessageCreate, async message => {
-    if (!message.guild && !message.author.bot) {
-        // Use client.activeDMs to check for a conversation
-        const adminId = client.activeDMs.get(message.author.id);
-        if (adminId) {
-            try {
-                const adminUser = await client.users.fetch(adminId);
-                await adminUser.send(`📨 **Reply from ${message.author.tag}:**\n\n${message.content}`);
-                await message.react('✅'); // Notify user
-            } catch (err) {
-                console.error('❌ Failed to forward DM reply:', err);
+// Handle messages
+client.on('messageCreate', async message => {
+    if (message.author.bot) return;
+
+    // DM from a user
+    if (!message.guild) {
+        let activeThreadId = null;
+        let activeGuildId = null;
+
+        // 1. Search across ALL configured guilds to find an active session for this user
+        for (const guildId in serverConfig.guilds) {
+            const guildSettings = serverConfig.guilds[guildId];
+            if (guildSettings.dmThreads && guildSettings.dmThreads[message.author.id]) {
+                activeThreadId = guildSettings.dmThreads[message.author.id];
+                activeGuildId = guildId;
+                break;
             }
+        }
+
+        // 2. If a session was found, forward the message
+        if (activeThreadId && activeGuildId) {
+            try {
+                const thread = await client.channels.fetch(activeThreadId);
+                await thread.send(`📨 **${message.author.tag}:** ${message.content}`);
+                await message.react('📬');
+            } catch (err) {
+                console.error(`❌ Failed to forward DM to thread ${activeThreadId}:`, err);
+                
+                // Cleanup: The thread was likely deleted in Discord.
+                const threadMap = serverConfig.guilds[activeGuildId].dmThreads;
+                if (threadMap) {
+                    delete threadMap[message.author.id];
+                    delete threadMap[activeThreadId];
+                    saveServerConfig();
+                    console.log(`Cleaned up stale thread reference for user ${message.author.id}`);
+                }
+            }
+        } else {
+            // 3. If NO session was found after checking all guilds, instruct the user
+            await message.reply({
+                content: "👋 You don't have an active conversation. To contact staff, please go to the server you need help with and use a command to open a new session."
+            }).catch(err => {
+                console.error(`❌ Could not reply to user ${message.author.id} in DMs:`, err);
+            });
         }
         return;
     }
 
-    // Auto-moderation
-    if (message.guild && !message.author.bot) {
-        if (message.member.permissions.has('MODERATE_MEMBERS')) return;
+    // Message from a thread (admin reply)
+    if (message.channel.isThread()) {
+        const guildId = message.guild.id;
+        const threadId = message.channel.id;
+        const userId = serverConfig.guilds[guildId]?.dmThreads?.[threadId];
 
-        addMessage(message.author.id, message.content);
-
-        if (checkSpam(message.author.id)) {
+        if (userId) {
             try {
-                await message.delete();
-                await message.member.timeout(5 * 60 * 1000, 'AutoMod: Spam detected');
-
-                logAction(message.guild.id, {
-                    action: 'AUTO_TIMEOUT',
-                    moderator: client.user.tag,
-                    user: message.author.tag,
-                    reason: 'Spam',
-                    timestamp: new Date().toISOString()
-                });
-
-                const spamEmbed = new EmbedBuilder()
-                    .setColor(0xFF0000)
-                    .setTitle('🚨 Spam Detected')
-                    .setDescription(`${message.author}, you were timed out for spamming.`)
-                    .setTimestamp();
-                await message.channel.send({ embeds: [spamEmbed] });
+                const user = await client.users.fetch(userId);
+                await user.send(`📩 **Reply from ${message.author.tag}:** ${message.content}`);
+                await message.react('✅');
             } catch (err) {
-                console.error('❌ AutoMod error:', err);
+                console.error('❌ Failed to send admin reply:', err);
             }
+        }
+    }
+
+    // AutoMod
+    const guildSettings = serverConfig.guilds[message.guild.id] || config.defaultSettings;
+    if (!guildSettings.autoMod?.enabled) return;
+    if (message.member?.permissions.has('MODERATE_MEMBERS')) return;
+
+    addMessage(message.author.id, message.content);
+    if (checkSpam(message.author.id)) {
+        try {
+            await message.delete();
+            await message.member.timeout(5 * 60 * 1000, 'AutoMod: Spam detected');
+
+            logAction(message.guild.id, {
+                action: 'AUTO_TIMEOUT',
+                moderator: client.user.tag,
+                user: message.author.tag,
+                reason: 'Spam',
+                timestamp: new Date().toISOString()
+            });
+
+            const spamEmbed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setTitle('🚨 Spam Detected')
+                .setDescription(`${message.author}, you were timed out for spamming.`)
+                .setTimestamp();
+
+            await message.channel.send({ embeds: [spamEmbed] });
+        } catch (err) {
+            console.error('❌ AutoMod Error:', err);
         }
     }
 });
 
-// Log errors and warnings
-client.on(Events.Error, console.error);
-client.on(Events.Warn, console.warn);
-
-// Graceful shutdown
+// Handle shutdown
 const gracefulShutdown = async () => {
     if (client.user) {
         console.log('Logging out...');
