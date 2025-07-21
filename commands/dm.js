@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
-const { getGuildConfig } = require('../configManager'); // Still need getGuildConfig
+const { getGuildConfig } = require('../configManager');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -17,11 +17,10 @@ module.exports = {
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    async execute(interaction, client, serverConfig, saveServerConfig) { // Added parameters
+    async execute(interaction, client, serverConfig, saveServerConfig) {
         const targetUser = interaction.options.getUser('user');
         const message = interaction.options.getString('message');
-        // Use getGuildConfig from configManager, which handles default settings
-        const config = getGuildConfig(interaction.guildId); 
+        const config = getGuildConfig(interaction.guildId);
 
         // Validate log channel setup
         if (!config.logChannel) {
@@ -56,7 +55,19 @@ module.exports = {
 
             const logMessage = await logChannel.send({ embeds: [logEmbed] });
 
-            // Save thread info for reply handling using the passed serverConfig
+            // Create a thread for the DM
+            const dmThread = await logMessage.startThread({
+                name: `DM with ${targetUser.tag}`,
+                autoArchiveDuration: 60,
+                reason: `DM session with ${targetUser.tag}`
+            });
+
+            await interaction.reply({
+                content: `✅ Message sent to ${targetUser.tag}. The conversation has been started in <#${dmThread.id}>.`,
+                ephemeral: true
+            });
+            
+            // Save thread info for reply handling
             if (!serverConfig.guilds[interaction.guildId]) {
                 serverConfig.guilds[interaction.guildId] = {};
             }
@@ -64,15 +75,11 @@ module.exports = {
                 serverConfig.guilds[interaction.guildId].dmThreads = {};
             }
             const dmThreads = serverConfig.guilds[interaction.guildId].dmThreads;
-            const threadId = logMessage.thread ? logMessage.thread.id : logMessage.channel.id;
-            dmThreads[targetUser.id] = threadId;
-            dmThreads[threadId] = targetUser.id;
-            saveServerConfig(); // Use the passed saveServerConfig function
-
-            await interaction.reply({
-                content: `✅ Message sent to ${targetUser.tag}.`,
-                ephemeral: true
-            });
+            // Map the user ID to the new thread ID and the thread ID back to the user ID
+            dmThreads[targetUser.id] = dmThread.id;
+            dmThreads[dmThread.id] = targetUser.id;
+            saveServerConfig();
+            
         } catch (err) {
             console.error('DM Error:', err);
             await interaction.reply({

@@ -1,6 +1,5 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-// No need to import serverConfig or saveServerConfig from configManager here, as they are passed
-// const { saveServerConfig, serverConfig } = require('../configManager'); 
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { saveServerConfig, serverConfig } = require('../configManager');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -13,24 +12,23 @@ module.exports = {
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    async execute(interaction, client, serverConfig, saveServerConfig) { // Added parameters
+    async execute(interaction, client, serverConfig, saveServerConfig) {
         const user = interaction.options.getUser('user');
         const guildId = interaction.guild.id;
-        const guildSettings = serverConfig.guilds[guildId]; // Use the passed serverConfig
 
-        if (!guildSettings || !guildSettings.dmThreads || !guildSettings.dmThreads[user.id]) {
+        // Ensure the guilds and dmThreads objects exist
+        if (!serverConfig.guilds[guildId] || !serverConfig.guilds[guildId].dmThreads || !serverConfig.guilds[guildId].dmThreads[user.id]) {
             return await interaction.reply({
                 content: '❌ No active DM session found for that user.',
                 ephemeral: true
             });
         }
 
+        const guildSettings = serverConfig.guilds[guildId];
         const threadId = guildSettings.dmThreads[user.id];
         const thread = await interaction.guild.channels.fetch(threadId).catch(() => null);
 
-        // --- Start of new/modified code ---
-
-        // 1. Notify the user via DM that the session has ended
+        // Notify the user via DM that the session has ended
         await user.send({
             content: `👋 Your DM session with the staff of **${interaction.guild.name}** has been closed. Any further messages will not be forwarded. To start a new conversation, please use the appropriate command on the server again.`
         }).catch(() => {
@@ -40,22 +38,23 @@ module.exports = {
             }
         });
 
-        // 2. Notify the staff in the thread and archive it
-        if (thread) {
+        // Check if the fetched channel is a thread before attempting to archive it
+        if (thread && thread.type === ChannelType.PrivateThread || thread.type === ChannelType.PublicThread) {
             await thread.send(`❌ **Session ended by ${interaction.user.tag}.** This thread will now be archived.`);
             await thread.setArchived(true).catch(() => {});
+        } else if (thread) {
+            // If it's a valid channel but not a thread, still send the message
+            await thread.send(`❌ **Session ended by ${interaction.user.tag}.** The linked conversation channel was not a thread and could not be archived.`);
         }
 
-        // 3. Remove the session data to stop message forwarding
+        // Remove the session data to stop message forwarding
         delete guildSettings.dmThreads[user.id];
         delete guildSettings.dmThreads[threadId];
-        saveServerConfig(); // Use the passed saveServerConfig function
+        saveServerConfig();
 
         await interaction.reply({
             content: `✅ Session with ${user.tag} has been ended and the user notified.`,
             ephemeral: true
         });
-
-        // --- End of new/modified code ---
     }
 };
