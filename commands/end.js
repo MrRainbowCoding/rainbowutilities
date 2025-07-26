@@ -4,7 +4,7 @@ const { saveServerConfig, serverConfig } = require('../configManager');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('end')
-        .setDescription('End a DM session with a user.')
+        .setDescription('End a DM session with a user.  (May not work correctly due to coding issues)')
         .addUserOption(opt =>
             opt.setName('user')
                 .setDescription('User to end conversation with')

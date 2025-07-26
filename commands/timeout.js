@@ -3,7 +3,7 @@ const { logAction } = require('../utils/logger');
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('mute')
+        .setName('timeout')
         .setDescription('Timeout a user in the server')
         .addUserOption(option =>
             option.setName('user')

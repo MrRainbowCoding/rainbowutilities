@@ -4,7 +4,7 @@ const { getGuildConfig } = require('../configManager');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('dm')
-        .setDescription('Send a direct message to a user as an admin.')
+        .setDescription('Send a direct message to a user as an admin. (May not work correctly due to coding issues)')
         .addUserOption(option =>
             option.setName('user')
                 .setDescription('The user to DM')
