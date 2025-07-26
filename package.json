@@ -10,6 +10,8 @@
   "author": "MrRainbow",
   "license": "MIT",
   "dependencies": {
+    "@google/genai": "^1.11.0",
+    "@google/generative-ai": "^0.24.1",
     "discord.js": "^14.21.0",
     "dotenv": "^17.2.0",
     "node-fetch": "^2.7.0",
@@ -23,6 +25,5 @@
     "url": "https://github.com/MrRainbowCoding/rainbowutilities/issues"
   },
   "homepage": "https://github.com/MrRainbowCoding/rainbowutilities#readme",
-  "description": "This is a versatile Discord bot designed to enhance server management, moderation, and user interaction. It comes packed with essential features to keep your community safe and engaged.",
-  "devDependencies": {}
+  "description": "This is a versatile Discord bot designed to enhance server management, moderation, and user interaction. It comes packed with essential features to keep your community safe and engaged."
 }
